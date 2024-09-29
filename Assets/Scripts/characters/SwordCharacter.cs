@@ -1,19 +1,19 @@
 ﻿using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.TextCore.Text;
 
 public class SwordCharacter : AbstractCharacter
 {
-    [SerializeField]
-    private GameObject Sword;
-    
     private Sword swordScript;
+    [SerializeField] private int SwordDamage = 10;
+
+    public bool IsSwinging { get => swordScript.IsSwinging; }
+    
     protected override void Awake()
     {
         base.Awake();
-        swordScript = Sword.GetComponent<Sword>();
-        //_Anim.SetBool("isSwordCharacter", true);
+
+        swordScript = GetComponent<Sword>();
+        swordScript.SwordDamage = SwordDamage;
     }
 
     protected override void Start() => base.Start();
@@ -26,19 +26,22 @@ public class SwordCharacter : AbstractCharacter
         _Anim.SetTrigger("SwordDeath");
     }
 
-    public override void OnAttack(Vector3 direction)
+    public override void HandleHit(Vector3 direction, int damage, string weapon="gun")
     {
-        if(Sword != null)
-        {
-            StartCoroutine(SwingSword());
-        }
-        _Anim.SetTrigger("Swing");
+        base.HandleHit(direction, damage);
+        TakeDamage(damage);
+        AudioManager.Instance.PlaySound("scream", 0.07f);
+        
     }
 
-    IEnumerator SwingSword()
+    public override void OnAttack(Vector3 direction)
     {
-        swordScript.setIsSwinging(true);
-        yield return new WaitForSeconds(0.5f);
-        swordScript.setIsSwinging(false);
+        if(swordScript != null)
+        {
+            StartCoroutine(swordScript.Swing());
+        }
+        _Anim.SetTrigger("Swing");
+        AudioManager.Instance.PlaySound("swing", 0.1f);
+
     }
 }

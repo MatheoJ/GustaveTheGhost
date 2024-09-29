@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -29,13 +27,18 @@ public class HealthBar : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
+        transform.rotation = Quaternion.Euler(0, 90, 0);
         if (character != null)
         {
+            /*Vector3 targetPosition = Camera.main.transform.position;
+            //targetPosition.z = transform.position.z;
+            transform.LookAt(targetPosition);*/
+
             // set the position of the health bar to the position of the character
             Vector3 position = character.transform.position;
             position.y += 1.5f;
             transform.position = position;
-
+            transform.rotation = Quaternion.Euler(new Vector3(0, 90, 0));
             float healthPercentage = (float)characterScript.CurrentHP / (float)characterScript.MaxHP;
             fill.color = Color.Lerp(zeroHealthColor, fullHealthColor, healthPercentage);
             slider.value = characterScript.CurrentHP;

@@ -1,6 +1,3 @@
-using System.Collections;
-using System.Collections.Generic;
-using System.Xml;
 using UnityEngine;
 
 public class HealScript : MonoBehaviour
@@ -36,8 +33,9 @@ public class HealScript : MonoBehaviour
         //get layer of "character"
         if (other.gameObject.layer == LayerMask.NameToLayer("Character"))
         {
-                Destroy(gameObject);
-                other.GetComponent<AbstractCharacter>().Heal(healAmount);
+            Destroy(gameObject);
+            other.GetComponent<AbstractCharacter>().Heal(healAmount);
+            AudioManager.Instance.PlaySound("potion", 0.1f);
         }
     }
 }

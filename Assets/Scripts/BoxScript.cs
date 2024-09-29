@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class BoxScript : MonoBehaviour
@@ -23,17 +21,15 @@ public class BoxScript : MonoBehaviour
 
     public void HandleCollision()
     {
-        print("handle collision");
         if (CollisionHandled)
         {
             return;
         }
-        print("collision");
         Destroy_box.SetActive(true);
         if (HealOrEnergy != null)
             HealOrEnergy.SetActive(true);
         Box.SetActive(false);
-
+        AudioManager.Instance.PlaySound("broken_wood", 0.1f);
         // fade out
         Destroy(gameObject, 5f);
         CollisionHandled = true;

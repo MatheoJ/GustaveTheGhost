@@ -1,13 +1,11 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using UnityEditor.Experimental.GraphView;
-using UnityEngine;
+﻿using UnityEngine;
 
 public class SwordEnemyAI : EnemyAI
 {
     protected override void OnAlert()
     {
-        if(Character == null || SeenPlayer == null)
+        base.OnAlert();
+        if (Character == null || SeenPlayer == null)
         {
             return;
         }
@@ -18,14 +16,20 @@ public class SwordEnemyAI : EnemyAI
         float time = Time.time;
         if (time % period <= Time.deltaTime)
         {
+            float deltaY = SeenPlayer.Position.y - Character.Position.y;
             float deltaZ = SeenPlayer.Position.z - Character.Position.z;
             float normalizedDeltaZ = pursueSpeed * deltaZ / Mathf.Abs(deltaZ);
 
+            if (deltaY > 0.5f && Character.Grounded && deltaZ < 5f)
+            {
+                Character.Jump();
+            }
             WalkingDirection = normalizedDeltaZ;
         }
         Vector3 direction = SeenPlayer.Position - Character.Position;
-        if (direction.magnitude < 1.0f)
+        if (direction.magnitude < 0.7f)
         {
+            WalkingDirection = 0;
             Character.Attack(direction);
         }
         

@@ -19,8 +19,8 @@ TagManager:
   - Chest
   - Character
   - Floor
-  - 
-  - 
+  - Death
+  - Weapon
   - 
   - 
   - 
@@ -45,4 +45,7 @@ TagManager:
   m_SortingLayers:
   - name: Default
     uniqueID: 0
+    locked: 0
+  - name: Health Bar
+    uniqueID: 1816979651
     locked: 0

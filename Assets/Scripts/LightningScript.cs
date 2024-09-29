@@ -4,12 +4,13 @@ using UnityEngine;
 
 public class LightningScript : MonoBehaviour
 {
-    private List<GameObject> children = new List<GameObject>();
+    private List<GameObject> children = new();
+    private List<Vector3> initialPostions = new();
     public float shakeIntensity = 0.05f; // Intensité de la vibration
     public float shakeDuration = 0.5f;   // Durée de la vibration
 
     // Start is called before the first frame update
-    void Start()
+    void OnEnable()
     {
         foreach (Transform child in transform)
         {
@@ -23,9 +24,21 @@ public class LightningScript : MonoBehaviour
         }
     }
 
+    private void OnDisable()
+    {
+        // Remettre les enfants à leur position initiale
+        for (int i = 0; i < children.Count; i++)
+        {
+            children[i].transform.localPosition = initialPostions[i];
+        }
+        children.Clear();
+    }
+    
+
     IEnumerator Shake(GameObject obj)
     {
         Vector3 originalPosition = obj.transform.localPosition;
+        initialPostions.Add(originalPosition);
 
         while (true) // Boucle infinie
         {

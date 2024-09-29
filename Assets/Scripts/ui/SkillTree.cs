@@ -1,15 +1,16 @@
-using System.Collections;
 using System.Collections.Generic;
 using TMPro;
-using UnityEditor.Playables;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 public class SkillNode
 {
+    public const string ASSET_PATH = "Prefabs/ui/SkillNode";
+
     public Vector2 Position { get; private set; }
-    public int Index { get; private set; }
-    public int[] Requirements { get; private set; }
+    public Skill.ID Id { get; private set; }
+    public Skill.ID[] Requirements { get; private set; }
 
     public string Name { get => _Skill.Name; }
     public bool Unlocked { get => _Skill.Unlocked; }
@@ -21,13 +22,13 @@ public class SkillNode
     TextMeshProUGUI _Label {  get; set; }
     Image _Image { get; set; }
 
-    public SkillNode(int index, Skill skill, Vector2 position, int[] requirements)
+    public SkillNode(Skill.ID skillId, Vector2 position, Skill.ID[] requirements)
     {
-        Index = index;
+        Id = skillId;
         Position = position;
         Requirements = requirements;
 
-        _Skill = skill;
+        _Skill = Skills.Get(skillId);
     }
 
     public void Unlock() => _Skill.Unlock();
@@ -69,26 +70,34 @@ public class SkillNode
 
 public class SkillTree : MonoBehaviour
 {
-    const string TITLE = "Compétences";
-    int POINTS_AVAILABLE = 9;
+    const string TITLE = "Purchase New Skills";
 
     [SerializeField] RectTransform Content;
     [SerializeField] TextMeshProUGUI TitleText;
-    [SerializeField] TextMeshProUGUI PointsText;
 
-    Dictionary<int, SkillNode> NodesDict = new Dictionary<int, SkillNode>();
+    // find back button 
+    public GameObject backButton;
+    public GameObject game;
+
+    Dictionary<Skill.ID, SkillNode> NodesDict = new Dictionary<Skill.ID, SkillNode>();
+
     SkillNode[] Nodes = {
-        new SkillNode(0, Skills.Get(Skill.ID.DASH), new Vector2(1, 0), new int[] {}),
-        new SkillNode(1, Skills.Get(Skill.ID.DOUBLE_JUMP), new Vector2(2, 0), new int[] {}),
-        //new SkillNode(2, "Ability A.1", false, 2, new Vector2(0, 1), new int[] { 0 }),
-        //new SkillNode(3, "Ability A.2", true, 3, new Vector2(1, 1), new int[] { 0 }),
-        //new SkillNode(4, "Ability B.1", false, 2, new Vector2(2, 1), new int[] { 1 }),
-        //new SkillNode(5, "Ability B.2", false, 3, new Vector2(3, 1), new int[] { 1 }),
-        //new SkillNode(6, "Ability C", false, 5, new Vector2(2, 2), new int[] { 3, 4 }),
+        new SkillNode(Skill.ID.DASH, new Vector2(1, 0), new Skill.ID[] {}),
+
+        new SkillNode(Skill.ID.JUMP, new Vector2(2, 0), new Skill.ID[] {}),
+        new SkillNode(Skill.ID.DOUBLE_JUMP, new Vector2(2, 1), new Skill.ID[] { Skill.ID.JUMP }),
+        new SkillNode(Skill.ID.TRIPLE_JUMP, new Vector2(2, 2), new Skill.ID[] { Skill.ID.DOUBLE_JUMP }),
+
+        new SkillNode(Skill.ID.POSSESSION, new Vector2(3, 0), new Skill.ID[] {}),
+        new SkillNode(Skill.ID.FIVE_SEC_POSSESSION, new Vector2(3, 1), new Skill.ID[] { Skill.ID.POSSESSION }),
+        new SkillNode(Skill.ID.TEN_SEC_POSSESSION, new Vector2(3, 2), new Skill.ID[] { Skill.ID.FIVE_SEC_POSSESSION }),
+
+        new SkillNode(Skill.ID.ONE_BOUNCE, new Vector2(4, 1), new Skill.ID[] { Skill.ID.POSSESSION }),
+        new SkillNode(Skill.ID.TWO_BOUNCE, new Vector2(4, 2), new Skill.ID[] { Skill.ID.ONE_BOUNCE })
     };
     
-    Vector2 _OutMargin = new Vector2(20, 20);
-    Vector2 _InMargin = new Vector2(10, 30);
+    Vector2 _OutMargin = new Vector2(80, 80);
+    Vector2 _InMargin = new Vector2(40, 80);
 
     private void Awake()
     {
@@ -98,7 +107,7 @@ public class SkillTree : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        GameObject asset = Resources.Load<GameObject>("Prefabs/SkillNode");
+        GameObject asset = Resources.Load<GameObject>(SkillNode.ASSET_PATH);
 
         // Set boundaries and create nodes
         Vector2Int gridSize = Vector2Int.zero;
@@ -126,7 +135,7 @@ public class SkillTree : MonoBehaviour
         foreach (SkillNode node in Nodes)
         {
             node.Initialize(Content, Instantiate(asset), gridOffset);
-            NodesDict.Add(node.Index, node);
+            NodesDict.Add(node.Id, node);
         }
 
         // Update nodes
@@ -135,32 +144,40 @@ public class SkillTree : MonoBehaviour
         // Draw lines between nodes
         foreach (SkillNode node in Nodes)
         {
-            foreach (int requirement in node.Requirements)
+            foreach (Skill.ID requirement in node.Requirements)
             {
                 if (!NodesDict.ContainsKey(requirement)) throw new KeyNotFoundException("Missing ability node '" + requirement.ToString() + "' in tree");
-
-                MakeLine(NodesDict[requirement].GetBottomPosition(), node.GetTopPosition(), Color.black);
+                MakeLine(NodesDict[requirement].GetBottomPosition(), node.GetTopPosition(), Color.white);
             }
         }
+
+        // Set back button
+        backButton.GetComponent<Button>().onClick.AddListener(() => {
+            SceneManager.LoadScene("Level_" + Utils.NextSceneToPlay); 
+        });
+
     }
 
-    void PurchaseAbility(int index)
+    void PurchaseAbility(Skill.ID id)
     {
-        if (NodesDict[index].Unlocked) return;
-        if (!AreRequirementsMet(index)) return;
-        if (!IsAbilityAffordable(index)) return;
+        if (NodesDict[id].Unlocked) return;
+        if (!AreRequirementsMet(id)) return;
+        if (!IsAbilityAffordable(id)) return;
 
-        NodesDict[index].Unlock();
-        POINTS_AVAILABLE -= NodesDict[index].Cost;
+        bool spent = Skills.SpendPoints(NodesDict[id].Cost);
+        if (!spent) return;
+
+        FindObjectOfType<Game>().SkillPoints = Skills.Points;
+        NodesDict[id].Unlock();
 
         UpdateData();
     }
 
-    bool AreRequirementsMet(int index)
+    bool AreRequirementsMet(Skill.ID id)
     {
-        SkillNode node = NodesDict[index];
+        SkillNode node = NodesDict[id];
 
-        foreach (int requirement in node.Requirements)
+        foreach (Skill.ID requirement in node.Requirements)
         {
             if (NodesDict[requirement].Unlocked)
                 continue;
@@ -171,30 +188,29 @@ public class SkillTree : MonoBehaviour
         return true;
     }
 
-    bool IsAbilityAffordable(int index)
+    bool IsAbilityAffordable(Skill.ID id)
     {
-        SkillNode node = NodesDict[index];
+        SkillNode node = NodesDict[id];
 
-        return POINTS_AVAILABLE >= node.Cost;
+        return Skills.Points >= node.Cost;
     }
 
     void UpdateData()
     {
         // Set labels
         TitleText.text = TITLE;
-        PointsText.text = "Points : " + POINTS_AVAILABLE;
 
         // Define colors
-        Color colorUnlocked = new Color(0, 0.8f, 0);
-        Color colorAvailable = new Color(0.95f, 0.95f, 0.95f);
-        Color colorTooExpensive = new Color(0.7f, 0.7f, 0.7f);
-        Color colorRestricted = new Color(0.4f, 0.4f, 0.4f);
+        Color colorUnlocked = new Color(0.63f, 0.62f, 0.54f);
+        Color colorAvailable = new Color(0.32f, 0.46f, 0.31f);
+        Color colorTooExpensive = new Color(0.15f, 0.27f, 0.20f);
+        Color colorRestricted = new Color(0.09f, 0.16f, 0.18f);
 
         // Draw nodes
         foreach (SkillNode node in Nodes)
         {
-            bool requirementsOk = AreRequirementsMet(node.Index);
-            bool costOk = IsAbilityAffordable(node.Index);
+            bool requirementsOk = AreRequirementsMet(node.Id);
+            bool costOk = IsAbilityAffordable(node.Id);
 
             Color color =
                 node.Unlocked ? colorUnlocked :
@@ -202,11 +218,12 @@ public class SkillTree : MonoBehaviour
                 requirementsOk ? colorTooExpensive :
                 colorRestricted;
 
-            node.Update(_OutMargin, _InMargin, color, () => PurchaseAbility(node.Index));
+            node.Update(_OutMargin, _InMargin, color, () => PurchaseAbility(node.Id));
         }
     }
 
-    void MakeLine(Vector2 a, Vector2 b, Color col, float size = 2)
+
+    void MakeLine(Vector2 a, Vector2 b, Color col, float size = 5)
     {
         GameObject line = new GameObject();
         line.name = "line from (" + a.x + ", " + a.y + ") to (" + b.x + ", " + b.y + ")";

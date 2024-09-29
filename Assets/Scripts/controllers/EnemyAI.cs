@@ -1,11 +1,11 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using UnityEditor.Experimental.GraphView;
-using UnityEngine;
+﻿using UnityEngine;
 
 public abstract class EnemyAI : AbstractController
 {
+    [SerializeField] bool aggressive = true;
+
     protected float SightDistance = 5.0f;
+    private float m_currentSightDistance = 5.0f;
 
     public AbstractCharacter SeenPlayer { get; private set; }
 
@@ -14,7 +14,14 @@ public abstract class EnemyAI : AbstractController
 
     public GameObject Lightnings;
 
-    // Awake se produit avait le Start. Il peut être bien de régler les références dans cette section.
+    public float alertTime = 1.0f;
+
+    public bool IsOnAlert => AlertCountdown > 0;
+
+    private float m_timeBeforeJump;
+
+    public void AttachToBody(AbstractCharacter character) => Character = character;
+
     protected override void Awake()
     {
         base.Awake();
@@ -22,34 +29,50 @@ public abstract class EnemyAI : AbstractController
         // get first child
         if  (Character != null)
             Lightnings = transform.GetChild(0).gameObject.transform.Find("Lightnings").gameObject;
-
-        Debug.Log("Awake" + Character);
     }
 
-    // Utile pour régler des valeurs aux objets
     protected override void Start()
     {
         base.Start();
 
         WalkingDirection = 0.5f;
+        m_timeBeforeJump = Random.Range(1.0f, 30.0f);
     }
 
-    // Vérifie les entrées de commandes du joueur
     protected override void Update()
     {
         base.Update();
 
-        //if (isDead) Destroy(gameObject);
-
-        if (WalkingDirection != 0) Character.Move(WalkingDirection);
-
-        if (SeenPlayer) OnAlert();
-        else
+        if (Character == null) return;
+        if(IsDead) return;
+        if (SeenPlayer)
         {
-            // Switch direction every 2.0 seconds
-            float time = Time.time;
-            if (time % 2.0f <= Time.deltaTime) WalkingDirection = -WalkingDirection;
+            OnAlert();
         }
+        else 
+        {
+            if (Character.Grounded)
+            {
+                if (CheckForWall() || CheckForCliff())
+                {
+                    WalkingDirection = -WalkingDirection;
+                }
+            }
+
+            /*if (m_timeBeforeJump > 0.0f)
+            {
+                m_timeBeforeJump -= Time.deltaTime;
+            }
+            else
+            {
+                Character.Jump();
+                m_timeBeforeJump = Random.Range(2.0f, 10.0f);
+            }*/
+        }
+
+        Character.Move(WalkingDirection);
+
+
     }
 
     void FixedUpdate()
@@ -63,34 +86,54 @@ public abstract class EnemyAI : AbstractController
         AbstractCharacter player = CheckForPlayer();
         if (player)
         {
-            AlertCountdown = 5.0f;
+            AlertCountdown = alertTime;
             SeenPlayer = player;
             Lightnings.SetActive(true);
         }
-        else
+        else if (AlertCountdown > 0)
         {
             AlertCountdown -= Time.deltaTime;
             if (AlertCountdown <= 0)
             {
                 AlertCountdown = 0;
                 SeenPlayer = null;
+                WalkingDirection = 0.5f;
+                m_currentSightDistance = SightDistance;
                 Lightnings.SetActive(false);
             }
         }
     }
 
-    protected abstract void OnAlert();
+    public override bool IsAlly(AbstractController other) => other is EnemyAI;
+
+    protected virtual void OnAlert()
+    {
+        if (SeenPlayer.CurrentHP <= 0)
+        {
+            SeenPlayer = null;
+            return;
+        }
+    }
+    protected override void OnDeath()
+    {
+        Skills.GainPoints(1);
+        FindObjectOfType<Game>().SkillPoints = Skills.Points;
+        FindObjectOfType<Game>().CheckForVictory();
+    }
 
     AbstractCharacter CheckForPlayer()
     {
+        if (!aggressive) return null;
+
         int layerMask = LayerMask.GetMask("Character") | LayerMask.GetMask("Floor");
-        float[] angles = { -30, -15, 0, 15, 30 };
+        float[] angles = { -30, -15, 0, 15, 30, 60 };
 
         AbstractCharacter seenPlayer = null;
 
         foreach (float angle in angles)
         {
-            GameObject obstacle = GetRaycast(layerMask, angle);
+            float dist = 0;
+            GameObject obstacle = GetRaycast(layerMask, angle, ref dist, Character.EyePosition);
             if (obstacle == null) continue;
 
             PlayerController controller = obstacle.GetComponentInParent<PlayerController>();
@@ -100,23 +143,59 @@ public abstract class EnemyAI : AbstractController
         return seenPlayer;
     }
 
-    GameObject GetRaycast(int layerMask, float angleX)
+    bool CheckForCliff()
+    {
+        bool cliff = false;
+
+        int layerMask = LayerMask.GetMask("Floor") | LayerMask.GetMask("Default");
+        float dist = 0;
+        GameObject obstacle = GetRaycast(layerMask, 90, ref dist, Character.EyePosition + 1.0f * Character.ForwardDirection);
+
+        if (obstacle == null || dist > 1f) cliff = true;
+
+        return cliff;
+    }
+
+    bool CheckForWall()
+    {
+        bool wall = false;
+
+        int layerMask = LayerMask.GetMask("Floor") | LayerMask.GetMask("Default") | LayerMask.GetMask("Chest");
+        float dist = 0;
+        GameObject obstacle = GetRaycast(layerMask, 0, ref dist, Character.EyePosition+0.5f*Vector3.down);
+
+        if (obstacle != null && dist < 0.5f) wall = true;
+        return wall;
+    }   
+    
+    public override void OnHit(Vector3 direction)
+    {
+        // turn to face the direction of the hit with walking direction
+        if (Vector3.Dot(Character.ForwardDirection, direction) > 0)
+        {
+            WalkingDirection = -WalkingDirection;
+            m_currentSightDistance = 2*SightDistance;
+        }
+        
+    }
+
+    GameObject GetRaycast(int layerMask, float angleX, ref float dist, Vector3 startPosition)
     {
         if (Character.Flipped) angleX *= -1;
         Vector3 direction = Quaternion.Euler(angleX, 0, 0) * Character.ForwardDirection;
 
         RaycastHit hit;
         // Does the ray intersect any objects excluding the player layer
-        if (Physics.Raycast(Character.EyePosition, direction, out hit, SightDistance, layerMask))
+        if (Physics.Raycast(startPosition, direction, out hit, m_currentSightDistance, layerMask))
         {
-
+            dist = hit.distance;
             Color color = hit.transform.gameObject.GetComponentInParent<PlayerController>() ? Color.red : Color.yellow;
-            Debug.DrawRay(Character.EyePosition, direction * hit.distance, color);
+            Debug.DrawRay(startPosition, direction * hit.distance, color);
             return hit.transform.gameObject;
         }
         else
         {
-            Debug.DrawRay(Character.EyePosition, direction * SightDistance, Color.white);
+            Debug.DrawRay(startPosition, direction * m_currentSightDistance, Color.white);
             return null;
         }
     }
@@ -125,8 +204,6 @@ public abstract class EnemyAI : AbstractController
     {
         base.updateCharacter();
         if (Character == null) return;
-
-        Debug.Log("updateCharacter" + Character);
 
         Lightnings = transform.GetChild(0).gameObject.transform.Find("Lightnings").gameObject;
     }

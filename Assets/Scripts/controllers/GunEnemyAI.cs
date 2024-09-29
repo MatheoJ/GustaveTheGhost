@@ -1,12 +1,10 @@
-﻿using System.Collections;
-using System.Collections.Generic;
-using UnityEditor.Experimental.GraphView;
-using UnityEngine;
+﻿using UnityEngine;
 
 public class GunEnemyAI : EnemyAI
 {
     protected override void OnAlert()
     {
+        base.OnAlert();
         if(SeenPlayer == null) {
             return;
         }
@@ -25,6 +23,26 @@ public class GunEnemyAI : EnemyAI
             WalkingDirection = normalizedDeltaZ;
         }
         Vector3 direction = SeenPlayer.Position - Character.Position;
-        Character.Attack(direction);
+        if (checkPlayerLos())
+        {
+            Character.Attack(direction);
+        }
+    }
+
+    private bool checkPlayerLos()
+    {
+        Vector3 direction = SeenPlayer.Position - Character.Position;
+        float distance = direction.magnitude;
+        direction.Normalize();
+
+        RaycastHit hit;
+        if (Physics.Raycast(Character.EyePosition, direction, out hit, distance))
+        {
+            if (hit.collider.gameObject == SeenPlayer.gameObject)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 }

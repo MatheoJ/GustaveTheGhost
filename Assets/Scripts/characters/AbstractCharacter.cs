@@ -1,8 +1,5 @@
 ﻿using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.TextCore.Text;
-using static UnityEngine.ParticleSystem;
 
 public abstract class AbstractCharacter : Entity
 {
@@ -21,7 +18,19 @@ public abstract class AbstractCharacter : Entity
     public int StartHP = 100;
     int _CurrentHP { get; set; }
     float _LastAttackTime { get; set; }
-    
+
+    private AbstractController Controller { get; set; }
+
+    private bool _isControlDisabled;
+
+    private bool _isChangingColor = false;
+
+    public bool IsControlDisabled
+    {
+        get { return _isControlDisabled; }
+        protected set { _isControlDisabled = value; }
+    }
+
     public Animator _Anim { get; set; }
 
     [SerializeField] protected float AttackSpeed = 1.2f;
@@ -53,19 +62,29 @@ public abstract class AbstractCharacter : Entity
 
     private TrailRenderer _trail;
 
+    private SkinnedMeshRenderer skinnedRenderer;
 
     // Awake se produit avait le Start. Il peut être bien de régler les références dans cette section.
     protected override void Awake()
     {
         base.Awake();
 
-        _trail = transform.Find("TrailOrigin")?.GetComponent<TrailRenderer>();
-        if (_trail)
-        {
-            _trail.enabled = false;
-        }
-        _Anim = GetComponent<Animator>();
+        Controller = GetComponentInParent<AbstractController>();
+        if (Controller == null) throw new MissingReferenceException("Character must be a child of AbstractController.");
 
+        _trail = transform.Find("TrailOrigin")?.GetComponent<TrailRenderer>();
+        if (_trail) _trail.enabled = false;
+
+        _Anim = GetComponent<Animator>();
+        try
+        {
+            skinnedRenderer = transform.Find("F01").transform.Find("f01").GetComponent<SkinnedMeshRenderer>();
+        }
+        catch
+        {
+            skinnedRenderer = null;
+        }
+    
     }
 
     protected override void Start()
@@ -87,30 +106,59 @@ public abstract class AbstractCharacter : Entity
         HandleDash();
     }
 
-        
+
+
+    public bool IsAlly(AbstractController other) => other.IsAlly(Controller);
+    public bool IsAlly(AbstractCharacter other) => other.IsAlly(Controller);
 
     public Vector3 GetForward() { return transform.TransformDirection(Vector3.forward); }
     public Vector3 GetEyePosition() { return transform.position + _EyePosition; }
     public Vector3 GetPosition() { return transform.position; }
-    public void Heal(int amount) => CurrentHP = Mathf.Min(CurrentHP + amount, MaxHP);
+
+    public void Heal(int amount) {
+        StartCoroutine(FlashColor(Color.green));
+        if (amount > 0)
+        {
+            CurrentHP = Mathf.Min(CurrentHP + amount, MaxHP);
+        }
+    }
+
 
     public void TakeDamage(int amount)
     {
-        if (!_IsDashing)
+        if (_IsDashing) return;
+        if (CurrentHP == 0) return;
+        StartCoroutine(FlashColor(Color.red));
+        if ((CurrentHP = Mathf.Max(0, CurrentHP - amount)) == 0)
         {
-            CurrentHP -= amount;
-            if (CurrentHP <= 0)
-            {
-                PlayDeathAnim();
-                gameObject.transform.parent.GetComponent<AbstractController>().isDead = true;
-                Destroy(gameObject, 1.0f);
-            }
-            else
+            PlayDeathAnim();
+            Controller.Kill();
+        }
+        else
+        {
+            if (!((this is ShieldCharacter shieldCharacter && shieldCharacter.IsSwinging) ||
+                (this is SwordCharacter swordCharacter && swordCharacter.IsSwinging)))
             {
                 PlayPainAnim();
             }
         }
     }
+    IEnumerator FlashColor(Color color)
+    {
+        if (!_isChangingColor)
+        {
+            if (skinnedRenderer != null)
+            {
+                _isChangingColor = true;
+                Color originalColor = skinnedRenderer.material.color;
+                skinnedRenderer.material.color = color;
+                yield return new WaitForSeconds(0.2f);
+                skinnedRenderer.material.color = originalColor;
+                _isChangingColor = false;
+            }
+        }
+    }
+
 
     public void Attack(Vector3 direction)
     {
@@ -125,12 +173,20 @@ public abstract class AbstractCharacter : Entity
         _Anim.SetTrigger("Pain");
     }
 
+    public void PlayShieldAnim()
+    {
+        _Anim.SetTrigger("Shield");
+    }
+
     public abstract void PlayDeathAnim();
     public abstract void OnAttack(Vector3 direction);
-
+    public virtual void HandleHit(Vector3 direction, int damage, string weapon="gun")
+    {
+        if (Controller is PlayerController) return;
+        Controller.OnHit(direction);
+    }
     public void Move(float direction)
     {
-        if (direction == 0) return;
 
         HorizontalMove(direction);
         Flip(direction);
@@ -154,14 +210,27 @@ public abstract class AbstractCharacter : Entity
     {
         if (Time.time - _LastDashTime < _DashCooldown || _IsDashing) return;
 
+        Vector3 dashDirection = Flipped ? Vector3.back : Vector3.forward;
+        BoxCollider box = GetComponent<BoxCollider>();
+        Vector3 halfExtents = box.bounds.extents;
+
+        // Vérifier les collisions
+        bool isBlocked = Physics.CheckBox(box.bounds.center, halfExtents, transform.rotation, ~_DashLayer);
+
+        if (isBlocked)
+        {
+            return;
+        }
+
         _IsDashing = true;
         if (_trail)
         {
             _trail.enabled = true;
         }
-        _DashDirection = Flipped ? Vector3.back : Vector3.forward;
+        _DashDirection = dashDirection;
         _DistanceDashed = 0;
         _LastDashTime = Time.time;
+        AudioManager.Instance.PlaySound("dash", 0.5f);
     }
 
     private void HandleDash()
@@ -182,7 +251,7 @@ public abstract class AbstractCharacter : Entity
             {
                 if ((_DashLayer.value & (1 << hit.collider.gameObject.layer)) == 0)
                 {
-                    Debug.Log("Not a dashable object");
+                    //Debug.Log("Not a dashable object");
                     _IsDashing = false;
                     if (_trail)
                     {
@@ -222,6 +291,19 @@ public abstract class AbstractCharacter : Entity
 
         Rb.velocity = new Vector3(Rb.velocity.x, Rb.velocity.y, horizontal);
         _Anim.SetFloat("MoveSpeed", Mathf.Abs(horizontal));
+
+        // if it is the player, play the walk sound
+        if (Controller is PlayerController)
+        {
+            if (Grounded && Mathf.Abs(horizontal) > 0)
+            {
+                AudioManager.Instance.PlayWalk(0.3f);
+            }
+            else
+            {
+                AudioManager.Instance.StopWalk();
+            }
+        }
     }
 
     // Gère l'orientation du joueur et les ajustements de la camera
@@ -239,46 +321,56 @@ public abstract class AbstractCharacter : Entity
         }
     }
 
-    // Collision avec le sol
-    void OnCollisionEnter(Collision coll)
+    private void OnTriggerEnter(Collider other)
     {
-        // On s'assure de bien être en contact avec le sol
-        if ((WhatIsGround & (1 << coll.gameObject.layer)) == 0)
+        if (other.gameObject.layer == LayerMask.NameToLayer("Weapon")){ 
             return;
-
-        // Évite une collision avec le plafond
-        if (coll.relativeVelocity.y > 0)
-        {
-            Grounded = true;
-            JumpCount = 0;
-            _Anim.SetBool("Grounded", Grounded);
         }
-    }
 
-    void OnCollisionStay(Collision coll)
-    {
-        // On s'assure de bien être en contact avec le sol
-        if ((WhatIsGround & (1 << coll.gameObject.layer)) == 0)
-            return;
-
-        // Évite une collision avec le plafond
-        if (coll.relativeVelocity.y > 0)
+        // Insta death
+        if (other.gameObject.layer == LayerMask.NameToLayer("Death"))
         {
-            Grounded = true;
-            JumpCount = 0;
-            _Anim.SetBool("Grounded", Grounded);
+            Debug.Log("Out of bounds");
+            Controller.Kill();
+            return;
         }
-    }
 
-    // Collision avec le sol
-    void OnCollisionExit(Collision coll)
+        // On s'assure de bien être en contact avec le sol
+        if ((WhatIsGround & (1 << other.gameObject.layer)) == 0)
+            return;
+
+        print("OnTriggerEnter");
+
+        if(!Grounded)
+        {
+            AudioManager.Instance.PlaySound("land", 0.1f);
+        }
+        // Évite une collision avec le plafond
+        Rigidbody rb = GetComponent<Rigidbody>();
+        Grounded = true;
+        JumpCount = 0;
+        _Anim.SetBool("Grounded", Grounded);
+
+    }
+    private void OnTriggerExit(Collider other)
     {
         // On s'assure de bien être en contact avec le sol
-        if ((WhatIsGround & (1 << coll.gameObject.layer)) == 0)
+        if ((WhatIsGround & (1 << other.gameObject.layer)) == 0)
             return;
+
+        if(Grounded)
+        {
+            AudioManager.Instance.PlaySound("jump", 0.1f);
+        }
 
         Grounded = false;
-        
+
         _Anim.SetBool("Grounded", false);
+    }
+
+    public void updateController()
+    {
+        Controller = GetComponentInParent<AbstractController>();
+        if (Controller == null) throw new MissingReferenceException("Character must be a child of AbstractController.");
     }
 }
