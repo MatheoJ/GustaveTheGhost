@@ -45,8 +45,8 @@
     <Analyzer Include="C:\Program Files\Unity\Hub\Editor\2022.3.6f1\Editor\Data\Tools\Unity.SourceGenerators\Unity.Properties.SourceGenerator.dll" />
   </ItemGroup>
   <ItemGroup>
-     <Compile Include="Assets\AllStarCharacterLibray\Scripts\Editor\TurnOffRenderers.cs" />
-     <Folder Include="Assets\AllStarCharacterLibray\Scripts\Editor" />
+     <Compile Include="Assets\ImportedAssets\AllStarCharacterLibray\Scripts\Editor\TurnOffRenderers.cs" />
+     <Folder Include="Assets\ImportedAssets\AllStarCharacterLibray\Scripts\Editor" />
      <Reference Include="UnityEngine">
      <HintPath>C:\Program Files\Unity\Hub\Editor\2022.3.6f1\Editor\Data\Managed\UnityEngine\UnityEngine.dll</HintPath>
      </Reference>
